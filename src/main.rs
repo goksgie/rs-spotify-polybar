@@ -19,7 +19,7 @@ fn status_update_loop(conn_session: &Connection) {
     let mut old_icon_playback_status = String::from("");
 
     loop {
-        thread::sleep(Duration::from_millis(1500));
+        thread::sleep(Duration::from_millis(3500));
         let current_song_info: String;
 
         if proxy.is_none() || !utils::is_connectable(&proxy.as_ref().unwrap()) {
@@ -75,9 +75,22 @@ fn status_update_loop(conn_session: &Connection) {
 
 /// Creates a server on localhost:port_number and listens for any
 /// command to be passed from polybar. 
-fn command_loop(conn_session: &Connection, port: u32) {
-    let local_host = format!("127.0.0.1:{}", port);
-    let socket = UdpSocket::bind(local_host).unwrap();
+fn command_loop(conn_session: &Connection, mut port: u32) {
+    let mut local_host = format!("127.0.0.1:{}", port);
+    let socket = UdpSocket::bind(local_host);
+    while socket.is_err() {
+        // on multi-monitor setup, status bar spawned as separate
+        // entities. Thus, it also spawns multiple scripts. In this case,
+        // in order to have buttons function, we bump the socket number by one
+        // so that it will work.
+        port += 1;
+        local_host = format!("127.0.0.1:{}", port);
+        let socket = UdpSocket::bind(local_host);
+        thread::sleep(Duration::from_millis(1000));
+    }
+
+    let socket = socket.unwrap();
+    socket.set_nonblocking(false).unwrap();
     let mut proxy = utils::create_proxy_for_spotify(&conn_session);
     let mut buf = [0; 2048];
 
@@ -88,6 +101,7 @@ fn command_loop(conn_session: &Connection, port: u32) {
         // we can simply ignore that.
         if proxy.is_none() || !utils::is_connectable(&proxy.as_ref().unwrap()) {
             proxy = utils::create_proxy_for_spotify(&conn_session);
+            thread::sleep(Duration::from_millis(3500));
             continue;
         }
 
@@ -127,8 +141,8 @@ fn main() {
     let args = arguments::Arguments::parse();
     let port = args.port;
 
-    if port <= 1024 || port > 65535 {
-        panic!("Invalid port number is given, expected: 1024-65535");
+    if port <= 1024 || port > 63335 {
+        panic!("Invalid port number is given, expected: 1024-63335");
     }
 
     let command_thread = thread::spawn(move || {
